@@ -37,9 +37,6 @@ Parameters:
   Image:
     Type: String
 
-Conditions:
-  LBSchemeInternal: !Equals [!Ref LBScheme, internal]
-
 Resources:
   ECSTaskRole:
     Type: AWS::IAM::Role
@@ -61,7 +58,7 @@ Resources:
       Protocol: HTTP
       Port: 80
       TargetType: ip
-      HealthCheckPath: /health-check
+      HealthCheckPath: /
       HealthyThresholdCount: 2
       TargetGroupAttributes:
          - Key: deregistration_delay.timeout_seconds
@@ -70,7 +67,7 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
       Name: !Sub ${AWS::StackName}${LBSuffix}
-      IpAddressType: !If [LBSchemeInternal, ipv4, dualstack]
+      IpAddressType: ipv4
       Scheme: !Ref LBScheme
       SecurityGroups: !Ref SecurityGroups
       Subnets: !Ref LBSubnetIds
@@ -165,4 +162,6 @@ Outputs:
   ECSTaskRoleArn:
     Description: Add the required policy for this role
     Value: !Ref ECSTaskRole
-
+  InternetALB:
+    Description: ALB URL
+    Value: !GetAtt InternetALB.DNSName
