@@ -1,0 +1,168 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Templates for building ALB and Fargate and AutoScaling."
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  ContainerSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+  LBSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+  LBSuffix:
+    Description: LB and TargetGroup Name Suffix, only allow numbers and hyphens(e.g. -20200520-01)
+    Type: String
+    MinLength: 0
+    MaxLength: 12
+    AllowedPattern: ^[0-9-]*$
+  LBScheme:
+    Type: String
+    Default: internal
+    AllowedValues:
+      - internal
+      - internet-facing
+  SecurityGroups:
+    Type: List<AWS::EC2::SecurityGroup::Id>
+  MinCapacity:
+    MinValue: 1
+    Type: Number
+  MaxCapacity:
+    MinValue: 1
+    Type: Number
+  ContainerName:
+    Type: String
+  ContainerCpu:
+    Type: Number
+  ContainerMemory:
+    Type: Number
+  Image:
+    Type: String
+
+Conditions:
+  LBSchemeInternal: !Equals [!Ref LBScheme, internal]
+
+Resources:
+  ECSTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-task-role
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+  TargetGroup:
+    Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
+    Properties:
+      VpcId: !Ref VpcId
+      Name: !Sub ${AWS::StackName}${LBSuffix}
+      Protocol: HTTP
+      Port: 80
+      TargetType: ip
+      HealthCheckPath: /health-check
+      HealthyThresholdCount: 2
+      TargetGroupAttributes:
+         - Key: deregistration_delay.timeout_seconds
+           Value: 60
+  InternetALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${AWS::StackName}${LBSuffix}
+      IpAddressType: !If [LBSchemeInternal, ipv4, dualstack]
+      Scheme: !Ref LBScheme
+      SecurityGroups: !Ref SecurityGroups
+      Subnets: !Ref LBSubnetIds
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      LoadBalancerArn: !Ref InternetALB
+      Port: 80
+      Protocol: HTTP
+  ECSCluster:
+    Type: "AWS::ECS::Cluster"
+    Properties:
+      ClusterName: !Sub ${AWS::StackName}
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+  ECSLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /ecs/${AWS::StackName}
+  ECSTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Cpu: !Ref ContainerCpu
+      Family: !Sub ${AWS::StackName}
+      Memory: !Ref ContainerMemory
+      NetworkMode: awsvpc
+      ExecutionRoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/ecsTaskExecutionRole
+      TaskRoleArn: !Ref ECSTaskRole
+      RequiresCompatibilities:
+        - FARGATE
+      ContainerDefinitions:
+        - Name: !Ref ContainerName
+          Image: !Ref Image
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref ECSLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: !Sub ${AWS::StackName}
+          PortMappings:
+            - HostPort: 80
+              Protocol: tcp
+              ContainerPort: 80
+  ECSService:
+    Type: AWS::ECS::Service
+    DependsOn: ALBListener
+    Properties:
+      Cluster: !Ref ECSCluster
+      DesiredCount: 1
+      LaunchType: FARGATE
+      LoadBalancers:
+        - TargetGroupArn: !Ref TargetGroup
+          ContainerPort: 80
+          ContainerName: !Ref ContainerName
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          SecurityGroups: !Ref SecurityGroups
+          Subnets: !Ref ContainerSubnetIds
+      ServiceName: !Sub ${AWS::StackName}
+      TaskDefinition: !Ref ECSTaskDefinition
+  ScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    DependsOn:
+      - ECSService
+    Properties:
+      MinCapacity: !Ref MinCapacity
+      MaxCapacity: !Ref MaxCapacity
+      ResourceId: !Sub
+        - service/${ECSClusterName}/${ECSDefaultServiceName}
+        - ECSClusterName: !Ref ECSCluster
+          ECSDefaultServiceName: !GetAtt ECSService.Name
+      RoleARN: !Sub arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+  ScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: CPUScalingPolicy
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref ScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 50
+        ScaleInCooldown: 300
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization
+Outputs:
+  ECSTaskRoleArn:
+    Description: Add the required policy for this role
+    Value: !Ref ECSTaskRole
+
