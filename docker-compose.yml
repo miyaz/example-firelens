@@ -17,7 +17,6 @@ services:
     build:
       context: goapp
       dockerfile: Dockerfile
-    env_file: ./.env
 
 networks:
   default:
