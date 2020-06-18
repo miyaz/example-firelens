@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  nginx:
+    build:
+      context: nginx
+      dockerfile: Dockerfile
+    environment:
+      - GOAPP_HOST=goapp
+      - VPC_CIDR=192.168.210.0/24
+    depends_on:
+      - goapp
+    ports:
+      - "80:80"
+
+  goapp:
+    build:
+      context: goapp
+      dockerfile: Dockerfile
+    env_file: ./.env
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 192.168.210.0/24

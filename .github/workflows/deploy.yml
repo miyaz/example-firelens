@@ -1,0 +1,87 @@
+name: deploy
+on:
+  push:
+    branches:
+      - dummy
+      #- master
+      #- develop
+
+jobs:
+
+  deploy:
+    name: deploy
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: set environment variables for QA
+      if: github.ref == 'refs/heads/develop'
+      env:
+        AWS_ACCOUNT_ID: 123456789012
+        ECS_TASK_ROLE: fargate-example-qa
+      run: |
+        echo "::set-env name=AWS_ACCOUNT_ID::${AWS_ACCOUNT_ID}"
+        echo "::set-env name=ECS_TASK_ROLE::${ECS_TASK_ROLE}"
+
+    - name: set environment variables for Production
+      if: github.ref == 'refs/heads/master'
+      env:
+        AWS_ACCOUNT_ID: 234567890123
+        ECS_TASK_ROLE: fargate-example-prod
+      run: |
+        echo "::set-env name=AWS_ACCOUNT_ID::${AWS_ACCOUNT_ID}"
+        echo "::set-env name=ECS_TASK_ROLE::${ECS_TASK_ROLE}"
+
+    - name: configure aws credentials for QA
+      if: github.ref == 'refs/heads/develop'
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_QA }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_QA }}
+        aws-region: ap-northeast-1
+
+    - name: configure aws credentials for Production
+      if: github.ref == 'refs/heads/master'
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ap-northeast-1
+
+    - name: checkout
+      uses: actions/checkout@v2
+
+    - name: login to ecr
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+
+    - name: build, tag, and push image to ecr
+      id: build-image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        docker build -t fargate-example-nginx:latest --build-arg image_conf_tmpl=$IMAGE_CONF_TMPL -f Dockerfile_nginx .
+        docker tag fargate-example-nginx:latest $ECR_REGISTRY/fargate-example-nginx:latest
+        docker tag fargate-example-nginx:latest $ECR_REGISTRY/fargate-example-nginx:$IMAGE_TAG
+        docker push $ECR_REGISTRY/fargate-example-nginx:latest
+        docker push $ECR_REGISTRY/fargate-example-nginx:$IMAGE_TAG
+        docker build -t fargate-example-goapp:latest -f Dockerfile ..
+        docker tag fargate-example-goapp:latest $ECR_REGISTRY/fargate-example-goapp:latest
+        docker tag fargate-example-goapp:latest $ECR_REGISTRY/fargate-example-goapp:$IMAGE_TAG
+        docker push $ECR_REGISTRY/fargate-example-goapp:latest
+        docker push $ECR_REGISTRY/fargate-example-goapp:$IMAGE_TAG
+      working-directory: ./goapp
+
+    - name: download ecspresso
+      env:
+        ver: v0.13.6
+      run: |
+        curl -sLo ecspresso.zip \
+          https://github.com/kayac/ecspresso/releases/download/$ver/ecspresso-$ver-linux-amd64.zip
+        unzip ecspresso.zip
+        mv $(ls -1 ecspresso-*-linux-amd64) ecspresso
+      working-directory: ./deploy
+
+    - name: deploy to ecs
+      run: ./ecspresso deploy --config ecspresso.yml --tasks=-1
+      working-directory: ./deploy
