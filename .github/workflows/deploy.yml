@@ -17,19 +17,15 @@ jobs:
       if: github.ref == 'refs/heads/develop'
       env:
         AWS_ACCOUNT_ID: 123456789012
-        ECS_TASK_ROLE: fargate-example-qa
       run: |
         echo "::set-env name=AWS_ACCOUNT_ID::${AWS_ACCOUNT_ID}"
-        echo "::set-env name=ECS_TASK_ROLE::${ECS_TASK_ROLE}"
 
     - name: set environment variables for Production
       if: github.ref == 'refs/heads/master'
       env:
         AWS_ACCOUNT_ID: 234567890123
-        ECS_TASK_ROLE: fargate-example-prod
       run: |
         echo "::set-env name=AWS_ACCOUNT_ID::${AWS_ACCOUNT_ID}"
-        echo "::set-env name=ECS_TASK_ROLE::${ECS_TASK_ROLE}"
 
     - name: configure aws credentials for QA
       if: github.ref == 'refs/heads/develop'
@@ -60,17 +56,12 @@ jobs:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAG: ${{ github.sha }}
       run: |
-        docker build -t fargate-example-nginx:latest --build-arg image_conf_tmpl=$IMAGE_CONF_TMPL -f Dockerfile_nginx .
-        docker tag fargate-example-nginx:latest $ECR_REGISTRY/fargate-example-nginx:latest
+        docker build -t fargate-example-nginx:latest nginx
         docker tag fargate-example-nginx:latest $ECR_REGISTRY/fargate-example-nginx:$IMAGE_TAG
-        docker push $ECR_REGISTRY/fargate-example-nginx:latest
         docker push $ECR_REGISTRY/fargate-example-nginx:$IMAGE_TAG
-        docker build -t fargate-example-goapp:latest -f Dockerfile ..
-        docker tag fargate-example-goapp:latest $ECR_REGISTRY/fargate-example-goapp:latest
+        docker build -t fargate-example-goapp:latest goapp
         docker tag fargate-example-goapp:latest $ECR_REGISTRY/fargate-example-goapp:$IMAGE_TAG
-        docker push $ECR_REGISTRY/fargate-example-goapp:latest
         docker push $ECR_REGISTRY/fargate-example-goapp:$IMAGE_TAG
-      working-directory: ./goapp
 
     - name: download ecspresso
       env:
