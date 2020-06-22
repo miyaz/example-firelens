@@ -57,10 +57,14 @@ jobs:
         IMAGE_TAG: ${{ github.sha }}
       run: |
         docker build -t fargate-example-nginx:latest nginx
+        docker tag fargate-example-nginx:latest $ECR_REGISTRY/fargate-example-nginx:latest
         docker tag fargate-example-nginx:latest $ECR_REGISTRY/fargate-example-nginx:$IMAGE_TAG
+        docker push $ECR_REGISTRY/fargate-example-nginx:latest
         docker push $ECR_REGISTRY/fargate-example-nginx:$IMAGE_TAG
         docker build -t fargate-example-goapp:latest goapp
+        docker tag fargate-example-goapp:latest $ECR_REGISTRY/fargate-example-goapp:latest
         docker tag fargate-example-goapp:latest $ECR_REGISTRY/fargate-example-goapp:$IMAGE_TAG
+        docker push $ECR_REGISTRY/fargate-example-goapp:latest
         docker push $ECR_REGISTRY/fargate-example-goapp:$IMAGE_TAG
 
     - name: download ecspresso

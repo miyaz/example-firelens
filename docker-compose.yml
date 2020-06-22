@@ -7,7 +7,6 @@ services:
       dockerfile: Dockerfile
     environment:
       - GOAPP_HOST=goapp
-      - VPC_CIDR=192.168.210.0/24
     depends_on:
       - goapp
     ports:
@@ -17,9 +16,3 @@ services:
     build:
       context: goapp
       dockerfile: Dockerfile
-
-networks:
-  default:
-    ipam:
-      config:
-        - subnet: 192.168.210.0/24
